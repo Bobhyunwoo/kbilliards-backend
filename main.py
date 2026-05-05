@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import google.generativeai as genai
+import requests
 import os
 from dotenv import load_dotenv
 
@@ -12,13 +12,11 @@ app = FastAPI(title="K-Billiards 보도자료 생성 API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST"],
+    allow_methods=["POST", "GET"],
     allow_headers=["Content-Type"],
 )
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-1.5-flash")
-
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 class PressRequest(BaseModel):
     release_type: str
@@ -36,11 +34,9 @@ class PressRequest(BaseModel):
     contact_name: str = ""
     contact_tel: str = ""
 
-
 @app.get("/")
 def health_check():
     return {"status": "ok", "service": "K-Billiards Press Release Generator"}
-
 
 @app.post("/generate")
 def generate_press_release(req: PressRequest):
@@ -76,7 +72,18 @@ def generate_press_release(req: PressRequest):
 보도자료만 출력하세요. 추가 설명이나 안내 문구 없이 보도자료 본문만 작성하세요."""
 
     try:
-        response = model.generate_content(prompt)
-        return {"result": response.text}
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        response = requests.post(
+            url,
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"maxOutputTokens": 1500}
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        return {"result": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
